@@ -105,85 +105,92 @@ function makeConstellation(id) {
   const count = randomInt(17, 19);
   const points = [];
 
-  const lanes = [
-    CENTER - 70,
-    CENTER + 25,
-    CENTER + 115,
-    CENTER + 205
-  ];
+  const minX = CENTER - 265;
+  const maxX = CENTER + 265;
+  const minY = CENTER - 70;
+  const maxY = CENTER + 265;
 
   const startLeft = Math.random() < 0.5;
-  const minX = CENTER - 230;
-  const maxX = CENTER + 235;
-  const minY = CENTER - 65;
-  const maxY = CENTER + 255;
+  let dir = startLeft ? 1 : -1;
 
   let current = {
-    x: startLeft ? randomBetween(minX, minX + 70) : randomBetween(maxX - 70, maxX),
-    y: lanes[randomInt(0, lanes.length - 1)] + randomBetween(-18, 18)
+    x: startLeft ? randomBetween(minX, minX + 55) : randomBetween(maxX - 55, maxX),
+    y: randomBetween(CENTER + 20, CENTER + 170)
   };
 
   points.push({ id: `${id}-0`, ...current });
 
-  let dir = startLeft ? 1 : -1;
-  let laneIndex = lanes.reduce((best, lane, i) => {
-    const bestD = Math.abs(lanes[best] - current.y);
-    const d = Math.abs(lane - current.y);
-    return d < bestD ? i : best;
-  }, 0);
-
   let attempts = 0;
 
-  while (points.length < count && attempts < 2000) {
+  while (points.length < count && attempts < 3000) {
     attempts++;
 
-    if (Math.random() < 0.28) {
-      laneIndex = clamp(laneIndex + (Math.random() < 0.5 ? -1 : 1), 0, lanes.length - 1);
-    }
+    // More room between points than v9. Mostly horizontal movement with controlled vertical drift.
+    // This creates a readable snake-like chain instead of a compressed cluster.
+    const step = randomBetween(72, 118);
+    const vertical = randomBetween(-70, 70);
 
-    if ((current.x > maxX - 45 && dir === 1) || (current.x < minX + 45 && dir === -1)) {
-      dir *= -1;
-      laneIndex = clamp(laneIndex + 1, 0, lanes.length - 1);
-    }
-
-    const stepX = randomBetween(58, 100) * dir;
-    const stepY = (lanes[laneIndex] - current.y) * 0.55 + randomBetween(-36, 36);
-
-    const next = {
-      x: clamp(current.x + stepX, minX, maxX),
-      y: clamp(current.y + stepY, minY, maxY)
+    let next = {
+      x: current.x + step * dir,
+      y: current.y + vertical
     };
 
+    // Bounce from the side instead of jumping across the room.
+    if (next.x > maxX || next.x < minX) {
+      dir *= -1;
+      next = {
+        x: current.x + randomBetween(68, 105) * dir,
+        y: current.y + randomBetween(45, 95)
+      };
+    }
+
+    next.x = clamp(next.x, minX, maxX);
+    next.y = clamp(next.y, minY, maxY);
+
     if (!inArena(next, 34)) continue;
-    if (dist(next, { x: CENTER, y: CENTER }) < 58) continue;
+    if (dist(next, { x: CENTER, y: CENTER }) < 62) continue;
 
-    const previous = points[points.length - 1];
-    const linkLength = dist(previous, next);
+    const segmentLength = dist(current, next);
 
-    // The boss patterns do not create giant jumps. Keep every segment local.
-    if (linkLength < 45 || linkLength > 135) continue;
+    // Prevent both extremes: no tiny stacked points, no giant skip line.
+    if (segmentLength < 70 || segmentLength > 138) continue;
+
+    // Keep non-neighbor points from stacking too much, but allow the chain to pass nearby.
+    const tooCloseToOldPoint = points
+      .slice(0, -1)
+      .some((p) => dist(p, next) < 50);
+
+    if (tooCloseToOldPoint) continue;
 
     points.push({ id: `${id}-${points.length}`, ...next });
     current = next;
   }
 
-  // Fallback: if the random walk got stuck, continue with a controlled local spiral.
+  // Fallback if random walk was too strict: continue with deterministic local snake steps.
   while (points.length < count) {
-    const previous = points[points.length - 1];
-    const angle = (points.length / count) * Math.PI * 2 + (startLeft ? 0 : Math.PI);
-    const next = {
-      x: clamp(previous.x + Math.cos(angle) * 75, minX, maxX),
-      y: clamp(previous.y + Math.sin(angle) * 55, minY, maxY)
+    let previous = points[points.length - 1];
+
+    let next = {
+      x: previous.x + 86 * dir,
+      y: previous.y + (points.length % 2 === 0 ? 52 : -48)
     };
 
-    if (!inArena(next, 34) || dist(next, { x: CENTER, y: CENTER }) < 58) {
-      next.x = clamp(previous.x + 70 * dir, minX, maxX);
-      next.y = clamp(previous.y + 25, minY, maxY);
-      if ((next.x >= maxX || next.x <= minX)) dir *= -1;
+    if (next.x > maxX || next.x < minX) {
+      dir *= -1;
+      next = {
+        x: previous.x + 82 * dir,
+        y: previous.y + 62
+      };
+    }
+
+    next.x = clamp(next.x, minX, maxX);
+    next.y = clamp(next.y, minY, maxY);
+
+    if (!inArena(next, 34)) {
+      next.y = clamp(CENTER + 100 + randomBetween(-80, 120), minY, maxY);
     }
 
     points.push({ id: `${id}-${points.length}`, ...next });
-    current = next;
   }
 
   const edges = makePathEdges(points);
@@ -280,26 +287,20 @@ function beamHitsCircle(beam, p, radius) {
 }
 
 export default function App() {
-  const [selectedMode, setSelectedMode] = useState('p3');
   const [phase, setPhase] = useState(1);
   const [game, setGame] = useState(() => initialP3(1));
   const keys = useRef({});
   const last = useRef(performance.now());
 
-  function restart(nextMode = selectedMode, nextPhase = phase) {
+  function restart(nextPhase = phase) {
     last.current = performance.now();
-    setGame(nextMode === 'p3' ? initialP3(Number(nextPhase)) : initialIntermission());
-  }
-
-  function changeMode(value) {
-    setSelectedMode(value);
-    restart(value, phase);
+    setGame(initialP3(Number(nextPhase)));
   }
 
   function changePhase(value) {
     const nextPhase = Number(value);
     setPhase(nextPhase);
-    restart('p3', nextPhase);
+    restart(nextPhase);
   }
 
   useEffect(() => {
@@ -662,30 +663,20 @@ export default function App() {
 
         <aside className="panel sidebar">
           <h1>L'ura Trainer</h1>
-          <p>WASD bewegen. Wähle links nur den Trainingsmodus. P3 ist jetzt bewusst separat und ohne Player- oder Keybind-Setup.</p>
+          <p>WASD bewegen. Dieses Tool trainiert nur Lura P3: Light-Zones, Soaks und Dark Constellations.</p>
 
           <div className="settingsBox">
             <label>
-              Training
-              <select value={selectedMode} onChange={(e) => changeMode(e.target.value)}>
-                <option value="p3">Lura P3</option>
-                <option value="intermission">Lura Intermission</option>
+              P3 Phase
+              <select value={phase} onChange={(e) => changePhase(e.target.value)}>
+                <option value="1">Phase 1: 3 Light Circles</option>
+                <option value="2">Phase 2: 2 Light Circles</option>
+                <option value="3">Phase 3: 1 moving Light Circle</option>
               </select>
             </label>
-
-            {selectedMode === 'p3' && (
-              <label>
-                P3 Phase
-                <select value={phase} onChange={(e) => changePhase(e.target.value)}>
-                  <option value="1">Phase 1: 3 Light Circles</option>
-                  <option value="2">Phase 2: 2 Light Circles</option>
-                  <option value="3">Phase 3: 1 moving Light Circle</option>
-                </select>
-              </label>
-            )}
           </div>
 
-          {game.mode === 'p3' ? <P3Stats game={game} /> : <IntermissionStats game={game} />}
+          <P3Stats game={game} />
 
           <button className="restart" onClick={() => restart()}>Restart Run</button>
         </aside>

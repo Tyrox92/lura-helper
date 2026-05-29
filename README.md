@@ -1,14 +1,14 @@
-# L'ura Trainer v9
+# L'ura P3 Trainer v10
 
-## Änderungen gegenüber v8
+## Änderungen gegenüber v9
 
-- Dark Constellations werden jetzt direkt als Pfad generiert, nicht erst als Punktwolke.
-- Keine isolierten Punkte mehr.
-- Keine langen Skip-Linien über mehrere Sterne hinweg.
-- Jede Verbindung geht nur zum nächsten Punkt in der Kette.
-- Segmente haben eine Maximaldistanz, damit keine unrealistischen Querlinien entstehen.
+- Auswahl zwischen Intermission und P3 wurde entfernt.
+- Das Tool ist jetzt nur noch für Lura P3 gedacht.
+- Es gibt nur noch die Auswahl zwischen Phase 1, Phase 2 und Phase 3.
+- Dark Constellations sind nicht mehr so gestaucht.
+- Punkte haben mehr Abstand zueinander.
+- Die Verbindung bleibt eine lokale Kette, ohne isolierte Punkte und ohne lange Skip-Linien.
 - 17 bis 19 Punkte bleiben erhalten.
-- Spawn-Bereich bleibt weiterhin hauptsächlich im realistischen P3-Bereich.
 
 ## Lokal starten
 

@@ -1,18 +1,13 @@
-# L'ura Trainer v5
+# L'ura Trainer v6
 
-## Änderungen
+## Änderungen gegenüber v5
 
-- Klar getrennte Auswahl zwischen:
-  - Lura P3
-  - Lura Intermission
-- P3 hat nur noch die Phasen-Auswahl 1, 2 oder 3.
-- Kein Player-Select und kein Ability-Keybind für P3.
-- Spieler heißt in P3 einfach `Player`.
-- Player spawnt in jeder P3-Phase direkt in einer Light-Zone.
-- Light-Spieler heißen `Wuff`, `Wuff2`, `Wuff3`.
-- Phase 2 Light Circles wurden enger gesetzt, damit der mittlere Soak erreichbar ist.
-- Dark Constellations haben jetzt 17 bis 19 Startpunkte.
-- Dark Constellations sind als zusammenhängendes Netzwerk gebaut, nicht mehr als lose Einzelverbindungen.
+- P3 Player-Hitbox für Dark Constellation ist jetzt näher am echten Verhalten:
+  - Es zählt praktisch der Center-Point des Spielers, nicht mehr der volle Player-Kreis.
+- Dark Constellation Punkte werden nicht mehr so stark im ganzen Raum verteilt.
+- Patterns spawnen jetzt primär um L'ura und im Bereich der Light-/Soak-Zonen.
+- Unrealistische Punkte weit oberhalb von L'ura werden vermieden.
+- Dark Constellations bleiben bei 17 bis 19 Startpunkten und werden als verbundenes Netzwerk gebaut.
 
 ## Lokal starten
 

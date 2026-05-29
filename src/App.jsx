@@ -99,45 +99,79 @@ function makeConstellation(id) {
   const count = randomInt(17, 19);
   const points = [];
   const offset = Math.random() * Math.PI * 2;
+
+  // P3 Constellations mostly happen around L'ura and the playable soak/light area.
+  // Keep them out of the unrealistic far upper arena.
+  const zones = [
+    { x: CENTER - 155, y: CENTER - 15, rx: 115, ry: 95, weight: 2 },
+    { x: CENTER + 140, y: CENTER - 5, rx: 120, ry: 100, weight: 2 },
+    { x: CENTER - 130, y: CENTER + 125, rx: 125, ry: 105, weight: 3 },
+    { x: CENTER + 135, y: CENTER + 125, rx: 125, ry: 105, weight: 3 },
+    { x: CENTER, y: CENTER + 190, rx: 150, ry: 105, weight: 3 },
+    { x: CENTER, y: CENTER + 45, rx: 145, ry: 95, weight: 2 }
+  ];
+
+  const weightedZones = zones.flatMap((z) => Array.from({ length: z.weight }, () => z));
+
   let attempts = 0;
 
-  while (points.length < count && attempts < 1000) {
+  while (points.length < count && attempts < 2500) {
     attempts++;
-    const angle = offset + (points.length / count) * Math.PI * 2 + randomBetween(-0.32, 0.32);
-    const radius = randomBetween(115, 318);
+
+    const zone = weightedZones[Math.floor(Math.random() * weightedZones.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random());
+
     const p = {
       id: `${id}-${points.length}`,
-      x: CENTER + Math.cos(angle) * radius + randomBetween(-22, 22),
-      y: CENTER + Math.sin(angle) * radius + randomBetween(-22, 22)
+      x: zone.x + Math.cos(angle) * zone.rx * r + randomBetween(-12, 12),
+      y: zone.y + Math.sin(angle) * zone.ry * r + randomBetween(-12, 12)
     };
 
-    if (!inArena(p, 34)) continue;
-    if (points.some((other) => dist(p, other) < 58)) continue;
+    // Avoid the far upper half. A little above boss is okay, top wall is not.
+    if (p.y < CENTER - 115) continue;
+    if (!inArena(p, 32)) continue;
+    if (dist(p, { x: CENTER, y: CENTER }) < 58) continue;
+    if (points.some((other) => dist(p, other) < 42)) continue;
+
     points.push(p);
   }
 
   while (points.length < count) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = randomBetween(120, 310);
-    points.push({
+    const angle = offset + (points.length / count) * Math.PI * 2 + randomBetween(-0.35, 0.35);
+    const radius = randomBetween(90, 260);
+    const p = {
       id: `${id}-${points.length}`,
       x: CENTER + Math.cos(angle) * radius,
-      y: CENTER + Math.sin(angle) * radius
-    });
+      y: CENTER + 80 + Math.sin(angle) * radius * 0.75
+    };
+
+    if (p.y < CENTER - 115) p.y = CENTER - 105 + randomBetween(0, 30);
+    if (!inArena(p, 32)) {
+      const dx = p.x - CENTER;
+      const dy = p.y - CENTER;
+      const len = Math.hypot(dx, dy);
+      p.x = CENTER + (dx / len) * (RADIUS - 42);
+      p.y = CENTER + (dy / len) * (RADIUS - 42);
+    }
+
+    points.push(p);
   }
 
   const edges = makeMstEdges(points);
   const seen = new Set(edges.map((e) => edgeKey(e.a, e.b)));
 
+  // Add extra nearby links so the pattern feels like one connected web,
+  // but avoid connecting the entire room with long diagonal nonsense.
   points.forEach((p, i) => {
     const nearest = points
       .map((q, j) => ({ j, d: i === j ? Infinity : dist(p, q) }))
       .sort((a, b) => a.d - b.d)
-      .slice(0, 2);
+      .slice(0, 3);
 
     nearest.forEach(({ j, d }) => {
       const key = edgeKey(i, j);
-      if (!seen.has(key) && d < 215) {
+      if (!seen.has(key) && d < 185) {
         seen.add(key);
         edges.push({ a: i, b: j });
       }
@@ -401,13 +435,13 @@ export default function App() {
         for (const edge of ng.currentWave.edges) {
           const a = ng.currentWave.points[edge.a];
           const b = ng.currentWave.points[edge.b];
-          if (pointLineDistance(ng.player.x, ng.player.y, a.x, a.y, b.x, b.y) <= DC_LINE_WIDTH / 2 + PLAYER_R) {
+          if (pointLineDistance(ng.player.x, ng.player.y, a.x, a.y, b.x, b.y) <= DC_LINE_WIDTH / 2 + 2) {
             return { ...ng, running: false, failed: `Dark Constellation ${ng.currentWave.id}: Verbindung berührt.` };
           }
         }
 
         for (const p of ng.currentWave.points) {
-          if (dist(ng.player, p) <= DC_POINT_R + PLAYER_R) {
+          if (dist(ng.player, p) <= DC_POINT_R + 2) {
             return { ...ng, running: false, failed: `Dark Constellation ${ng.currentWave.id}: Punkt berührt.` };
           }
         }

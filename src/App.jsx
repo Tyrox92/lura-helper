@@ -95,6 +95,38 @@ function makeMstEdges(points) {
   return edges;
 }
 
+
+function orientation(a, b, c) {
+  const v = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+  if (Math.abs(v) < 0.0001) return 0;
+  return v > 0 ? 1 : 2;
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+
+  return o1 !== o2 && o3 !== o4;
+}
+
+function segmentWouldCross(points, next) {
+  if (points.length < 3) return false;
+
+  const a = points[points.length - 1];
+  const b = next;
+
+  for (let i = 0; i < points.length - 2; i++) {
+    const c = points[i];
+    const d = points[i + 1];
+
+    if (segmentsIntersect(a, b, c, d)) return true;
+  }
+
+  return false;
+}
+
 function makePathEdges(points) {
   // Points are generated in path order. Connect only neighbors.
   // This guarantees no isolated points and no long cross-room skip links.
@@ -103,94 +135,117 @@ function makePathEdges(points) {
 
 function makeConstellation(id) {
   const count = randomInt(17, 19);
-  const points = [];
-
-  const minX = CENTER - 265;
-  const maxX = CENTER + 265;
-  const minY = CENTER - 70;
+  const minX = CENTER - 270;
+  const maxX = CENTER + 270;
+  const minY = CENTER - 72;
   const maxY = CENTER + 265;
 
-  const startLeft = Math.random() < 0.5;
-  let dir = startLeft ? 1 : -1;
+  const MIN_POINT_DISTANCE = 58;
+  const MIN_SEGMENT = 78;
+  const MAX_SEGMENT = 132;
 
-  let current = {
-    x: startLeft ? randomBetween(minX, minX + 55) : randomBetween(maxX - 55, maxX),
-    y: randomBetween(CENTER + 20, CENTER + 170)
-  };
+  function tryBuildPath(seed) {
+    const startLeft = seed % 2 === 0;
+    let dir = startLeft ? 1 : -1;
 
-  points.push({ id: `${id}-0`, ...current });
-
-  let attempts = 0;
-
-  while (points.length < count && attempts < 3000) {
-    attempts++;
-
-    // More room between points than v9. Mostly horizontal movement with controlled vertical drift.
-    // This creates a readable snake-like chain instead of a compressed cluster.
-    const step = randomBetween(72, 118);
-    const vertical = randomBetween(-70, 70);
-
-    let next = {
-      x: current.x + step * dir,
-      y: current.y + vertical
+    const points = [];
+    let current = {
+      x: startLeft ? randomBetween(minX, minX + 50) : randomBetween(maxX - 50, maxX),
+      y: randomBetween(CENTER + 35, CENTER + 190)
     };
 
-    // Bounce from the side instead of jumping across the room.
-    if (next.x > maxX || next.x < minX) {
-      dir *= -1;
-      next = {
-        x: current.x + randomBetween(68, 105) * dir,
-        y: current.y + randomBetween(45, 95)
+    points.push({ id: `${id}-0`, ...current });
+
+    let attempts = 0;
+
+    while (points.length < count && attempts < 2400) {
+      attempts++;
+
+      if ((current.x > maxX - 75 && dir === 1) || (current.x < minX + 75 && dir === -1)) {
+        dir *= -1;
+      }
+
+      const forward = randomBetween(82, 126) * dir;
+      const verticalBias = points.length % 4 === 0 ? randomBetween(48, 92) : randomBetween(-72, 72);
+
+      let next = {
+        x: current.x + forward,
+        y: current.y + verticalBias
       };
+
+      // Soft bounce from top/bottom, not a teleport.
+      if (next.y < minY || next.y > maxY) {
+        next.y = clamp(current.y - verticalBias * 0.75, minY, maxY);
+      }
+
+      if (next.x < minX || next.x > maxX) {
+        dir *= -1;
+        next.x = current.x + randomBetween(82, 118) * dir;
+        next.y = current.y + randomBetween(45, 85);
+      }
+
+      next.x = clamp(next.x, minX, maxX);
+      next.y = clamp(next.y, minY, maxY);
+
+      if (!inArena(next, 34)) continue;
+      if (dist(next, { x: CENTER, y: CENTER }) < 64) continue;
+
+      const segmentLength = dist(current, next);
+      if (segmentLength < MIN_SEGMENT || segmentLength > MAX_SEGMENT) continue;
+
+      // Two orbs should never visually sit almost inside each other.
+      if (points.some((p) => dist(p, next) < MIN_POINT_DISTANCE)) continue;
+
+      // Constellation path should not cross itself.
+      if (segmentWouldCross(points, next)) continue;
+
+      points.push({ id: `${id}-${points.length}`, ...next });
+      current = next;
     }
 
-    next.x = clamp(next.x, minX, maxX);
-    next.y = clamp(next.y, minY, maxY);
-
-    if (!inArena(next, 34)) continue;
-    if (dist(next, { x: CENTER, y: CENTER }) < 62) continue;
-
-    const segmentLength = dist(current, next);
-
-    // Prevent both extremes: no tiny stacked points, no giant skip line.
-    if (segmentLength < 70 || segmentLength > 138) continue;
-
-    // Keep non-neighbor points from stacking too much, but allow the chain to pass nearby.
-    const tooCloseToOldPoint = points
-      .slice(0, -1)
-      .some((p) => dist(p, next) < 50);
-
-    if (tooCloseToOldPoint) continue;
-
-    points.push({ id: `${id}-${points.length}`, ...next });
-    current = next;
+    return points.length === count ? points : null;
   }
 
-  // Fallback if random walk was too strict: continue with deterministic local snake steps.
-  while (points.length < count) {
-    let previous = points[points.length - 1];
+  let points = null;
 
-    let next = {
-      x: previous.x + 86 * dir,
-      y: previous.y + (points.length % 2 === 0 ? 52 : -48)
-    };
+  for (let seed = 0; seed < 42; seed++) {
+    points = tryBuildPath(seed);
+    if (points) break;
+  }
 
-    if (next.x > maxX || next.x < minX) {
-      dir *= -1;
-      next = {
-        x: previous.x + 82 * dir,
-        y: previous.y + 62
-      };
+  // Last-resort fallback: a wide deterministic S-curve. Still non-crossing and readable.
+  if (!points) {
+    points = [];
+    const rows = [CENTER - 45, CENTER + 45, CENTER + 135, CENTER + 225];
+    let idx = 0;
+
+    for (let r = 0; r < rows.length && points.length < count; r++) {
+      const y = rows[r] + randomBetween(-10, 10);
+      const rowCount = r === 0 ? 5 : r === 1 ? 5 : r === 2 ? 5 : 4;
+      const startLeft = r % 2 === 0;
+
+      for (let i = 0; i < rowCount && points.length < count; i++) {
+        const t = rowCount === 1 ? 0 : i / (rowCount - 1);
+        const x = startLeft
+          ? minX + 35 + t * (maxX - minX - 70)
+          : maxX - 35 - t * (maxX - minX - 70);
+
+        const p = { id: `${id}-${idx}`, x, y };
+        if (inArena(p, 34) && dist(p, { x: CENTER, y: CENTER }) >= 64) {
+          points.push(p);
+          idx++;
+        }
+      }
     }
 
-    next.x = clamp(next.x, minX, maxX);
-    next.y = clamp(next.y, minY, maxY);
-
-    if (!inArena(next, 34)) {
-      next.y = clamp(CENTER + 100 + randomBetween(-80, 120), minY, maxY);
+    while (points.length < count) {
+      const last = points[points.length - 1];
+      points.push({
+        id: `${id}-${points.length}`,
+        x: clamp(last.x + randomBetween(-95, 95), minX, maxX),
+        y: clamp(last.y + 70, minY, maxY)
+      });
     }
-
-    points.push({ id: `${id}-${points.length}`, ...next });
   }
 
   const edges = makePathEdges(points);

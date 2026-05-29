@@ -1,13 +1,13 @@
-# L'ura Trainer v6
+# L'ura Trainer v7
 
-## Änderungen gegenüber v5
+## Änderungen gegenüber v6
 
-- P3 Player-Hitbox für Dark Constellation ist jetzt näher am echten Verhalten:
-  - Es zählt praktisch der Center-Point des Spielers, nicht mehr der volle Player-Kreis.
-- Dark Constellation Punkte werden nicht mehr so stark im ganzen Raum verteilt.
-- Patterns spawnen jetzt primär um L'ura und im Bereich der Light-/Soak-Zonen.
-- Unrealistische Punkte weit oberhalb von L'ura werden vermieden.
-- Dark Constellations bleiben bei 17 bis 19 Startpunkten und werden als verbundenes Netzwerk gebaut.
+- Dark Constellations verbinden sich jetzt eher wie ein durchgehender Pfad von Punkt zu Punkt.
+- Jeder Punkt hat maximal zwei Verbindungen.
+- Kein dichtes Spiderweb mehr mit mehreren Verbindungen pro Punkt.
+- Die 17 bis 19 Startpunkte bleiben erhalten.
+- Die Punkte bleiben weiterhin hauptsächlich im realistischeren Bereich um L'ura, Light-Zonen und Soaks.
+- Player-Hitbox gegen Constellation-Laser bleibt center-point-nah.
 
 ## Lokal starten
 

@@ -95,6 +95,46 @@ function makeMstEdges(points) {
   return edges;
 }
 
+function makePathEdges(points) {
+  if (points.length < 2) return [];
+
+  const remaining = new Set(points.map((_, i) => i));
+  const edges = [];
+
+  // Start on the left side, preferably a bit lower, so the path usually snakes
+  // through the playable area instead of creating a starburst web.
+  let current = points
+    .map((p, i) => ({ i, score: p.x + Math.abs(p.y - (CENTER + 120)) * 0.45 }))
+    .sort((a, b) => a.score - b.score)[0].i;
+
+  remaining.delete(current);
+
+  while (remaining.size) {
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const j of remaining) {
+      const d = dist(points[current], points[j]);
+      const verticalPenalty = Math.abs(points[current].y - points[j].y) * 0.18;
+      const longJumpPenalty = d > 185 ? (d - 185) * 2.2 : 0;
+      const score = d + verticalPenalty + longJumpPenalty;
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = j;
+      }
+    }
+
+    if (best === null) break;
+
+    edges.push({ a: current, b: best });
+    remaining.delete(best);
+    current = best;
+  }
+
+  return edges;
+}
+
 function makeConstellation(id) {
   const count = randomInt(17, 19);
   const points = [];
@@ -158,25 +198,10 @@ function makeConstellation(id) {
     points.push(p);
   }
 
-  const edges = makeMstEdges(points);
-  const seen = new Set(edges.map((e) => edgeKey(e.a, e.b)));
-
-  // Add extra nearby links so the pattern feels like one connected web,
-  // but avoid connecting the entire room with long diagonal nonsense.
-  points.forEach((p, i) => {
-    const nearest = points
-      .map((q, j) => ({ j, d: i === j ? Infinity : dist(p, q) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3);
-
-    nearest.forEach(({ j, d }) => {
-      const key = edgeKey(i, j);
-      if (!seen.has(key) && d < 185) {
-        seen.add(key);
-        edges.push({ a: i, b: j });
-      }
-    });
-  });
+  // Realistic training approximation:
+  // Dark Constellation mostly behaves like one continuous path through the points.
+  // So each point gets at most two connections. No spiderweb / multi-edge clusters.
+  const edges = makePathEdges(points);
 
   return { id, points, edges, startedAt: 0 };
 }

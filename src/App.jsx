@@ -98,38 +98,47 @@ function makeMstEdges(points) {
 function makePathEdges(points) {
   if (points.length < 2) return [];
 
+  const MAX_LINK = 155;
+  const HARD_MAX_LINK = 185;
   const remaining = new Set(points.map((_, i) => i));
   const edges = [];
 
-  // Start on the left side, preferably a bit lower, so the path usually snakes
-  // through the playable area instead of creating a starburst web.
+  // Start around the left/lower side and then continue locally.
+  // This keeps the pattern as a realistic chain instead of creating huge cross-room jumps.
   let current = points
-    .map((p, i) => ({ i, score: p.x + Math.abs(p.y - (CENTER + 120)) * 0.45 }))
+    .map((p, i) => ({
+      i,
+      score: p.x + Math.abs(p.y - (CENTER + 115)) * 0.55
+    }))
     .sort((a, b) => a.score - b.score)[0].i;
 
   remaining.delete(current);
 
   while (remaining.size) {
-    let best = null;
-    let bestScore = Infinity;
+    const candidates = [...remaining]
+      .map((j) => {
+        const d = dist(points[current], points[j]);
+        const yPenalty = Math.abs(points[current].y - points[j].y) * 0.10;
+        const reversePenalty = points[j].x < points[current].x - 45 ? 16 : 0;
+        const longPenalty = d > MAX_LINK ? (d - MAX_LINK) * 4 : 0;
 
-    for (const j of remaining) {
-      const d = dist(points[current], points[j]);
-      const verticalPenalty = Math.abs(points[current].y - points[j].y) * 0.18;
-      const longJumpPenalty = d > 185 ? (d - 185) * 2.2 : 0;
-      const score = d + verticalPenalty + longJumpPenalty;
+        return {
+          j,
+          d,
+          score: d + yPenalty + reversePenalty + longPenalty
+        };
+      })
+      .sort((a, b) => a.score - b.score);
 
-      if (score < bestScore) {
-        bestScore = score;
-        best = j;
-      }
-    }
+    let pick = candidates.find((c) => c.d <= MAX_LINK);
 
-    if (best === null) break;
+    // Only allow a longer link if the path would otherwise stop completely.
+    if (!pick) pick = candidates.find((c) => c.d <= HARD_MAX_LINK);
+    if (!pick) break;
 
-    edges.push({ a: current, b: best });
-    remaining.delete(best);
-    current = best;
+    edges.push({ a: current, b: pick.j });
+    remaining.delete(pick.j);
+    current = pick.j;
   }
 
   return edges;
@@ -143,12 +152,12 @@ function makeConstellation(id) {
   // P3 Constellations mostly happen around L'ura and the playable soak/light area.
   // Keep them out of the unrealistic far upper arena.
   const zones = [
-    { x: CENTER - 155, y: CENTER - 15, rx: 115, ry: 95, weight: 2 },
-    { x: CENTER + 140, y: CENTER - 5, rx: 120, ry: 100, weight: 2 },
-    { x: CENTER - 130, y: CENTER + 125, rx: 125, ry: 105, weight: 3 },
-    { x: CENTER + 135, y: CENTER + 125, rx: 125, ry: 105, weight: 3 },
-    { x: CENTER, y: CENTER + 190, rx: 150, ry: 105, weight: 3 },
-    { x: CENTER, y: CENTER + 45, rx: 145, ry: 95, weight: 2 }
+    { x: CENTER - 185, y: CENTER + 70, rx: 95, ry: 120, weight: 3 },
+    { x: CENTER - 80, y: CENTER + 105, rx: 110, ry: 115, weight: 3 },
+    { x: CENTER + 25, y: CENTER + 105, rx: 120, ry: 115, weight: 3 },
+    { x: CENTER + 135, y: CENTER + 85, rx: 105, ry: 125, weight: 3 },
+    { x: CENTER + 210, y: CENTER + 50, rx: 80, ry: 110, weight: 2 },
+    { x: CENTER, y: CENTER + 205, rx: 135, ry: 80, weight: 2 }
   ];
 
   const weightedZones = zones.flatMap((z) => Array.from({ length: z.weight }, () => z));
@@ -172,7 +181,7 @@ function makeConstellation(id) {
     if (p.y < CENTER - 115) continue;
     if (!inArena(p, 32)) continue;
     if (dist(p, { x: CENTER, y: CENTER }) < 58) continue;
-    if (points.some((other) => dist(p, other) < 42)) continue;
+    if (points.some((other) => dist(p, other) < 34)) continue;
 
     points.push(p);
   }

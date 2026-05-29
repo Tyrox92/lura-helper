@@ -1,12 +1,11 @@
-# L'ura Trainer v7
+# L'ura Trainer v8
 
-## Änderungen gegenüber v6
+## Änderungen gegenüber v7
 
-- Dark Constellations verbinden sich jetzt eher wie ein durchgehender Pfad von Punkt zu Punkt.
-- Jeder Punkt hat maximal zwei Verbindungen.
-- Kein dichtes Spiderweb mehr mit mehreren Verbindungen pro Punkt.
-- Die 17 bis 19 Startpunkte bleiben erhalten.
-- Die Punkte bleiben weiterhin hauptsächlich im realistischeren Bereich um L'ura, Light-Zonen und Soaks.
+- Dark-Consteallation-Pfade vermeiden jetzt unrealistisch lange Verbindungslinien.
+- Der Pfad wählt lokale Nachbarpunkte mit Maximaldistanz.
+- Längere Verbindungen werden nur noch als Notfall erlaubt, damit das Pattern verbunden bleibt.
+- Punktverteilung wurde dichter in den realistischen P3-Bereich gelegt, damit natürlichere Ketten entstehen.
 - Player-Hitbox gegen Constellation-Laser bleibt center-point-nah.
 
 ## Lokal starten

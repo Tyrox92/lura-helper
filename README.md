@@ -1,14 +1,15 @@
-# L'ura P3 Trainer v11
+# L'ura P3 Trainer v12
 
-## Änderungen gegenüber v10
+## Änderungen gegenüber v11
 
-- Dark Constellations haben jetzt eine Mindestdistanz zwischen den Orbs.
-- Orbs sollten nicht mehr fast ineinander spawnen.
-- Die Pfadsegmente dürfen sich nicht mehr überkreuzen.
-- Die Verbindung bleibt eine einzelne lokale Kette.
+- Der alte starre Fallback wurde entfernt.
+- Dark Constellations werden wieder zufälliger generiert.
+- Punkte bleiben weiter auf Abstand.
+- Verbindungen bleiben eine lokale Kette.
+- Keine überkreuzenden Linien.
 - Keine isolierten Punkte.
 - Keine langen Skip-Linien.
-- Das Tool bleibt ausschließlich P3 mit Phase 1, 2 und 3.
+- Die Pattern sollten nicht mehr wie horizontale feste Reihen aussehen.
 
 ## Lokal starten
 

@@ -1,13 +1,18 @@
-# L'ura Trainer v4
+# L'ura Trainer v5
 
-Neue Funktionen:
+## Änderungen
 
-- Mode-Auswahl zwischen Intermission Crystal und P3 Dark Constellations
-- P3 Light Phase 1, 2 und 3
-- Light-Zonen, 3 Soaks mit 20 Sekunden Timer und 5 Sekunden Soakzeit
-- Dark Constellation mit 5 Waves
-- Punkte erscheinen, nach 2 Sekunden Verbindungen, nach 2 Sekunden Despawn, danach 4 Sekunden Pause
-- Connections werden als nearest-neighbor Pattern simuliert
+- Klar getrennte Auswahl zwischen:
+  - Lura P3
+  - Lura Intermission
+- P3 hat nur noch die Phasen-Auswahl 1, 2 oder 3.
+- Kein Player-Select und kein Ability-Keybind für P3.
+- Spieler heißt in P3 einfach `Player`.
+- Player spawnt in jeder P3-Phase direkt in einer Light-Zone.
+- Light-Spieler heißen `Wuff`, `Wuff2`, `Wuff3`.
+- Phase 2 Light Circles wurden enger gesetzt, damit der mittlere Soak erreichbar ist.
+- Dark Constellations haben jetzt 17 bis 19 Startpunkte.
+- Dark Constellations sind als zusammenhängendes Netzwerk gebaut, nicht mehr als lose Einzelverbindungen.
 
 ## Lokal starten
 

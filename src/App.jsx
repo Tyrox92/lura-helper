@@ -1,78 +1,745 @@
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const STORAGE_KEY = 'lura-trainer-settings-v4';
-const ARENA = 720, CENTER = 360, RADIUS = 350;
-const PLAYER_R = 10, CRYSTAL_R = 13, PLAYER_SPEED = 210;
+const ARENA = 720;
+const CENTER = ARENA / 2;
+const RADIUS = 350;
+const PLAYER_R = 10;
+const PLAYER_SPEED = 215;
+
+const LIGHT_R = 120;
+const SOAK_R = 52;
+const SOAK_REQUIRED = 5;
+const SOAK_TIMER = 20;
+const OUTSIDE_LIGHT_GRACE = 1.35;
+
+const DC_WAVES = 5;
+const DC_SPAWN = 2;
+const DC_ACTIVE = 2;
+const DC_GAP = 4;
+const DC_LINE_WIDTH = 22;
+const DC_POINT_R = 17;
+
+const CRYSTAL_R = 13;
+const BEAM_INTERVAL = 5;
+const BEAM_WARNING = 3;
+const BEAM_ACTIVE = 2;
+const BEAM_WIDTH = 48;
 const INTERMISSION_SECONDS = 30;
-const BEAM_INTERVAL = 5, BEAM_WARNING = 3, BEAM_ACTIVE = 2, BEAM_WIDTH = 48;
-const STAR_WARNING = 3, STAR_ACTIVE = 0.85, STAR_TOTAL = STAR_WARNING + STAR_ACTIVE;
-const PICKUP_DISTANCE = PLAYER_R + CRYSTAL_R + 5, REARM_PICKUP_DISTANCE = PLAYER_R + CRYSTAL_R + 18;
-const CONSTELLATION_WAVES = 5, CONSTELLATION_SPAWN = 2, CONSTELLATION_ACTIVE = 2, CONSTELLATION_GAP = 4;
-const CONSTELLATION_LINE_WIDTH = 20, CONSTELLATION_POINT_R = 18;
-const SOAK_TIMER = 20, SOAK_REQUIRED = 5, SOAK_R = 52, LIGHT_R = 118, OUTSIDE_LIGHT_GRACE = 1.2;
-const DEFAULT_ACTION_COMBO = { code:'KeyQ', key:'Q', ctrl:false, shift:true, alt:false, meta:false };
 
-const raid = [
- ['Pains',250,95],['Insa',380,95],['Melascula',560,150],['Cimera',225,170],['Nihilara',90,160],['Shikaya',155,245],['Gromun',140,340],['Lbo',35,320],['Doom',85,470],['Para',205,500],['Dapl',195,590],['Kreb',280,535],['Wahana',360,535],['Shaamy',390,625],['Frost',510,570],['Arkade',465,480],['Zoukie',500,355],['Meme',600,465],['Carlinn',640,290],['Sy bien',475,220]
-];
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-const rnd=(a,b)=>a+Math.random()*(b-a);
-const rndi=(a,b)=>Math.floor(rnd(a,b+1));
-const inArena=(p,pad=0)=>Math.hypot(p.x-CENTER,p.y-CENTER)<=RADIUS-pad;
-const getRaidMember=(name)=>raid.find(([n])=>n===name)||raid.find(([n])=>n==='Frost');
-function pickMany(arr,count){const c=[...arr],o=[]; while(c.length&&o.length<count){const i=Math.floor(Math.random()*c.length); o.push(c.splice(i,1)[0]);} return o;}
-function pointLineDistance(px,py,ax,ay,bx,by){const abx=bx-ax,aby=by-ay,apx=px-ax,apy=py-ay,ab2=abx*abx+aby*aby; const t=clamp((apx*abx+apy*aby)/ab2,0,1); return Math.hypot(px-(ax+abx*t),py-(ay+aby*t));}
-function makeBeam(now,id){return {id,angle:Math.random()*Math.PI*2,warnUntil:now+BEAM_WARNING,activeUntil:now+BEAM_WARNING+BEAM_ACTIVE};}
-function beamHitsCircle(b,p,r){const len=RADIUS+20,bx=CENTER+Math.cos(b.angle)*len,by=CENTER+Math.sin(b.angle)*len; return pointLineDistance(p.x,p.y,CENTER,CENTER,bx,by)<=BEAM_WIDTH/2+r;}
-function makeStar(target,now,id,final=false){return {id,target,start:now,activeAt:now+STAR_WARNING,end:now+STAR_TOTAL,rays:final?8:rndi(5,6),rotation:Math.random()*Math.PI*2,final};}
-function starSegments(pos,star){const out=[]; for(let i=0;i<star.rays;i++){const a=star.rotation+(i/star.rays)*Math.PI*2; out.push({ax:pos.x+Math.cos(a)*18,ay:pos.y+Math.sin(a)*18,bx:pos.x+Math.cos(a)*145,by:pos.y+Math.sin(a)*145});} return out;}
-function starHitsCircle(pos,star,circle,r){return starSegments(pos,star).some(s=>pointLineDistance(circle.x,circle.y,s.ax,s.ay,s.bx,s.by)<=6+r);}
-function comboLabel(c){if(!c?.code)return'nicht gesetzt'; const p=[]; if(c.ctrl)p.push('Ctrl'); if(c.shift)p.push('Shift'); if(c.alt)p.push('Alt'); if(c.meta)p.push('Meta'); p.push(c.key||c.code); return p.join(' + ');}
-function prettyKey(e){if(e.code.startsWith('Key'))return e.code.replace('Key','').toUpperCase(); if(e.code.startsWith('Digit'))return e.code.replace('Digit',''); if(e.code.startsWith('Numpad'))return e.code.replace('Numpad','Num '); if(e.code==='Space')return'Space'; if(e.code==='Escape')return'Esc'; return e.code.replace('Arrow','').replace('Control','Ctrl');}
-function eventToCombo(e){if(['ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight','MetaLeft','MetaRight'].includes(e.code))return null; return {code:e.code,key:prettyKey(e),ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey};}
-function comboMatchesEvent(c,e){return c&&c.code===e.code&&!!c.ctrl===e.ctrlKey&&!!c.shift===e.shiftKey&&!!c.alt===e.altKey&&!!c.meta===e.metaKey;}
-function loadSettings(){try{const s=JSON.parse(localStorage.getItem(STORAGE_KEY)); if(s?.playerName&&s?.actionCombo?.code)return s;}catch{} return null;}
-function saveSettings(s){localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}
-function initialIntermission(playerName='Frost'){const p=getRaidMember(playerName); return {kind:'intermission',running:true,failed:null,time:0,player:{x:p[1],y:p[2]},hasCrystal:true,crystal:null,beams:[],stars:[],nextBeam:BEAM_INTERVAL,nextStars:2.4,finalStarsDone:false,beamId:1,starId:1,drops:0};}
-function soakPositions(){return [{id:1,x:CENTER-155,y:CENTER+95,progress:0,assigned:'bot'},{id:2,x:CENTER+150,y:CENTER+85,progress:0,assigned:'bot'},{id:3,x:CENTER,y:CENTER+210,progress:0,assigned:'player'}];}
-function makeLightCarriers(phase,playerName){const count=phase===1?3:phase===2?2:1; const names=['Yargil','Viridia','Smacked','Cimera','Pains','Zoukie'].filter(n=>n!==playerName); const a=[{x:CENTER-135,y:CENTER+65},{x:CENTER+120,y:CENTER+65},{x:CENTER,y:CENTER+175}]; return Array.from({length:count},(_,i)=>({id:i+1,name:names[i]||`Light ${i+1}`,x:a[i].x,y:a[i].y,baseX:a[i].x,baseY:a[i].y}));}
-function initialP3(playerName='Frost',phase=1){const p=getRaidMember(playerName); return {kind:'p3',running:true,failed:null,time:0,player:{x:p[1],y:p[2]},p3Phase:Number(phase),lightCarriers:makeLightCarriers(Number(phase),playerName),soaks:soakPositions(),soaksStartedAt:1.2,outsideLightTime:0,currentWave:null,waveId:0,nextWaveAt:3};}
-function constellationState(w,now){if(!w)return'none'; const age=now-w.startedAt; if(age<CONSTELLATION_SPAWN)return'spawn'; if(age<CONSTELLATION_SPAWN+CONSTELLATION_ACTIVE)return'active'; return'done';}
-function generateConstellation(id){const count=rndi(10,14), points=[], off=Math.random()*Math.PI*2; for(let i=0;i<count;i++){const a=off+(i/count)*Math.PI*2+rnd(-.23,.23), rad=rnd(130,315); const p={id:`${id}-${i}`,x:CENTER+Math.cos(a)*rad,y:CENTER+Math.sin(a)*rad}; if(inArena(p,30))points.push(p);} const edges=[], seen=new Set(); for(let i=0;i<points.length;i++){let best=null,bd=Infinity; for(let j=0;j<points.length;j++){if(i===j)continue; const d=dist(points[i],points[j]); if(d<bd){bd=d;best=j;}} if(best!==null&&bd<230){const a=Math.min(i,best),b=Math.max(i,best),k=`${a}-${b}`; if(!seen.has(k)){seen.add(k);edges.push({a,b});}}} return {id,points,edges};}
-function updatePhase3LightMovement(carriers,soaks,now){if(!carriers.length)return carriers; const c=carriers[0], route=[{x:c.baseX,y:c.baseY},...soaks.map(s=>({x:s.x,y:s.y}))]; let t=now-1.5,pos=route[0]; for(let i=1;i<route.length;i++){if(t<=0)break; if(t<1){pos={x:route[i-1].x+(route[i].x-route[i-1].x)*t,y:route[i-1].y+(route[i].y-route[i-1].y)*t}; break;} t-=1; if(t<SOAK_REQUIRED){pos=route[i]; break;} t-=SOAK_REQUIRED; pos=route[i];} return [{...c,x:pos.x,y:pos.y}];}
+const STARTS = {
+  p3: { x: CENTER - 95, y: CENTER + 80 },
+  intermission: { x: 510, y: 570 }
+};
 
-export default function App(){
- const saved=loadSettings();
- const [mode,setMode]=useState(saved?.mode||'intermission');
- const [p3Phase,setP3Phase]=useState(saved?.p3Phase||1);
- const [playerName,setPlayerName]=useState(saved?.playerName||'Frost');
- const [actionCombo,setActionCombo]=useState(saved?.actionCombo||DEFAULT_ACTION_COMBO);
- const [setupOpen,setSetupOpen]=useState(!saved); const [recording,setRecording]=useState(false);
- const [game,setGame]=useState(()=> (saved?.mode==='p3'?initialP3(saved?.playerName||'Frost',saved?.p3Phase||1):initialIntermission(saved?.playerName||'Frost')));
- const keys=useRef({}), actionPressed=useRef(false), last=useRef(performance.now()), comboRef=useRef(actionCombo), playerRef=useRef(playerName), modeRef=useRef(mode), phaseRef=useRef(p3Phase);
- const teammates=useMemo(()=>raid.map(([name,x,y])=>({name,x,y})).filter(t=>t.name!==playerName),[playerName]);
- useEffect(()=>{comboRef.current=actionCombo},[actionCombo]); useEffect(()=>{playerRef.current=playerName},[playerName]); useEffect(()=>{modeRef.current=mode},[mode]); useEffect(()=>{phaseRef.current=p3Phase},[p3Phase]);
- const persist=(next={})=>({mode,p3Phase,playerName,actionCombo,...next});
- function restart(m=modeRef.current,p=playerRef.current,ph=phaseRef.current){actionPressed.current=false; last.current=performance.now(); setGame(m==='p3'?initialP3(p,ph):initialIntermission(p));}
- function applySettings(next={}){const s=persist(next); saveSettings(s); setSetupOpen(false); restart(s.mode,s.playerName,s.p3Phase);}
- function handleModeChange(v){setMode(v); saveSettings(persist({mode:v})); restart(v,playerName,p3Phase);} function handlePhaseChange(v){const ph=Number(v); setP3Phase(ph); saveSettings(persist({p3Phase:ph})); restart(mode,playerName,ph);} function handlePlayerChange(v){setPlayerName(v); saveSettings(persist({playerName:v})); restart(mode,v,p3Phase);}
- function recordKey(e){e.preventDefault(); e.stopPropagation(); const c=eventToCombo(e); if(!c)return; setActionCombo(c); saveSettings(persist({actionCombo:c})); setRecording(false);}
- useEffect(()=>{if(!recording)return; window.addEventListener('keydown',recordKey,{passive:false}); return()=>window.removeEventListener('keydown',recordKey);},[recording,mode,p3Phase,playerName,actionCombo]);
- useEffect(()=>{const down=e=>{const move=['KeyW','KeyA','KeyS','KeyD'].includes(e.code), act=comboMatchesEvent(comboRef.current,e); if(move||act)e.preventDefault(); keys.current[e.code]=true; if(act&&!e.repeat)actionPressed.current=true;}; const up=e=>{const move=['KeyW','KeyA','KeyS','KeyD'].includes(e.code), act=comboMatchesEvent(comboRef.current,e); if(move||act)e.preventDefault(); keys.current[e.code]=false;}; window.addEventListener('keydown',down,{passive:false}); window.addEventListener('keyup',up,{passive:false}); return()=>{window.removeEventListener('keydown',down); window.removeEventListener('keyup',up);};},[]);
- function movePlayer(g,dt){let vx=0,vy=0;if(keys.current.KeyW)vy--; if(keys.current.KeyS)vy++; if(keys.current.KeyA)vx--; if(keys.current.KeyD)vx++; if(vx||vy){const l=Math.hypot(vx,vy); const c={x:g.player.x+vx/l*PLAYER_SPEED*dt,y:g.player.y+vy/l*PLAYER_SPEED*dt}; if(inArena(c,PLAYER_R))return c;} return g.player;}
- useEffect(()=>{let raf; const tick=ms=>{const dt=Math.min(.033,(ms-last.current)/1000); last.current=ms; setGame(g=>{if(!g.running||setupOpen||recording)return g; return g.kind==='p3'?tickP3(g,dt):tickIntermission(g,dt);}); raf=requestAnimationFrame(tick);}; raf=requestAnimationFrame(tick); return()=>cancelAnimationFrame(raf);},[setupOpen,recording,teammates]);
- function tickIntermission(g,dt){let ng={...g,time:g.time+dt}, now=ng.time; ng.player=movePlayer(ng,dt); if(actionPressed.current){actionPressed.current=false; if(ng.hasCrystal){ng.hasCrystal=false; ng.crystal={x:ng.player.x,y:ng.player.y,droppedAt:now,pickupArmed:false}; ng.drops++;}} if(!ng.hasCrystal&&ng.crystal){const d=dist(ng.player,ng.crystal); if(!ng.crystal.pickupArmed&&d>=REARM_PICKUP_DISTANCE)ng.crystal={...ng.crystal,pickupArmed:true}; if(ng.crystal.pickupArmed&&d<=PICKUP_DISTANCE){ng.hasCrystal=true; ng.crystal=null;}} if(!ng.hasCrystal&&ng.crystal&&now-ng.crystal.droppedAt>5)return{...ng,running:false,failed:'Crystal lag länger als 5 Sekunden auf dem Boden.'}; if(now>=ng.nextBeam){const bs=Array.from({length:4},(_,i)=>makeBeam(now,ng.beamId+i)); ng.beams=[...ng.beams,...bs]; ng.beamId+=4; ng.nextBeam+=BEAM_INTERVAL;} ng.beams=ng.beams.filter(b=>now<=b.activeUntil); if(now>=ng.nextStars&&now<INTERMISSION_SECONDS-3){const poss=[...teammates,{name:playerRef.current,x:ng.player.x,y:ng.player.y}], chosen=pickMany(poss,rndi(5,6)); const stars=chosen.map((t,i)=>makeStar(t.name,now,ng.starId+i)); ng.stars=[...ng.stars,...stars]; ng.starId+=stars.length; ng.nextStars=now+rnd(3.2,5);} if(!ng.finalStarsDone&&now>=INTERMISSION_SECONDS){const all=[...teammates,{name:playerRef.current,x:ng.player.x,y:ng.player.y}], stars=all.map((t,i)=>makeStar(t.name,now,ng.starId+i,true)); ng.stars=[...ng.stars,...stars]; ng.starId+=stars.length; ng.finalStarsDone=true;} ng.stars=ng.stars.filter(s=>now<=s.end); const cp=ng.hasCrystal?ng.player:ng.crystal; if(cp){for(const b of ng.beams){if(now>b.warnUntil&&beamHitsCircle(b,cp,CRYSTAL_R))return{...ng,running:false,failed:'Crystal wurde von einem Beam getroffen.'};} for(const s of ng.stars){if(now<s.activeAt)continue; const holder=s.target===playerRef.current?ng.player:teammates.find(t=>t.name===s.target); if(holder&&starHitsCircle(holder,s,cp,CRYSTAL_R))return{...ng,running:false,failed:`Crystal wurde von der Starsplinter-Explosion von ${s.target} getroffen.`};}} if(ng.finalStarsDone&&ng.stars.length===0&&now>INTERMISSION_SECONDS+STAR_TOTAL)return{...ng,running:false,failed:'Clear. Intermission sauber überlebt.'}; return ng;}
- function tickP3(g,dt){let ng={...g,time:g.time+dt}, now=ng.time; ng.player=movePlayer(ng,dt); ng.lightCarriers=ng.p3Phase===3?updatePhase3LightMovement(ng.lightCarriers,ng.soaks,now):ng.lightCarriers; let soaks=ng.soaks.map(s=>({...s})); if(now>=ng.soaksStartedAt){soaks=soaks.map(s=>{let p=s.progress; if(ng.p3Phase!==3&&s.assigned==='bot'){const start=s.id===1?2:3.5; if(now>=start)p=Math.max(p,clamp((now-start)/SOAK_REQUIRED,0,1)*SOAK_REQUIRED);} if(ng.p3Phase===3&&ng.lightCarriers[0]&&dist(ng.lightCarriers[0],s)<=SOAK_R)p=Math.min(SOAK_REQUIRED,p+dt); if(dist(ng.player,s)<=SOAK_R)p=Math.min(SOAK_REQUIRED,p+dt); return{...s,progress:p};});} ng.soaks=soaks; if(now>=ng.soaksStartedAt&&now-ng.soaksStartedAt>=SOAK_TIMER&&soaks.some(s=>s.progress<SOAK_REQUIRED))return{...ng,running:false,failed:'Soaks wurden nicht innerhalb von 20 Sekunden geleert.'}; const inLight=ng.lightCarriers.some(l=>dist(ng.player,l)<=LIGHT_R); ng.outsideLightTime=inLight?0:ng.outsideLightTime+dt; if(ng.outsideLightTime>OUTSIDE_LIGHT_GRACE)return{...ng,running:false,failed:'Du warst zu lange außerhalb einer Light-Zone.'}; if(!ng.currentWave&&ng.waveId<CONSTELLATION_WAVES&&now>=ng.nextWaveAt){const id=ng.waveId+1; ng.currentWave={...generateConstellation(id),startedAt:now}; ng.waveId=id;} if(ng.currentWave){const state=constellationState(ng.currentWave,now); if(state==='active'){for(const e of ng.currentWave.edges){const a=ng.currentWave.points[e.a],b=ng.currentWave.points[e.b]; if(pointLineDistance(ng.player.x,ng.player.y,a.x,a.y,b.x,b.y)<=CONSTELLATION_LINE_WIDTH/2+PLAYER_R)return{...ng,running:false,failed:`Dark Constellation ${ng.currentWave.id}: Verbindung berührt.`};} for(const p of ng.currentWave.points){if(dist(ng.player,p)<=CONSTELLATION_POINT_R+PLAYER_R)return{...ng,running:false,failed:`Dark Constellation ${ng.currentWave.id}: Punkt berührt.`};}} if(state==='done'){ng.currentWave=null; ng.nextWaveAt=now+CONSTELLATION_GAP;}} if(ng.waveId>=CONSTELLATION_WAVES&&!ng.currentWave&&soaks.every(s=>s.progress>=SOAK_REQUIRED)&&now>ng.nextWaveAt-.5)return{...ng,running:false,failed:'Clear. P3 Pattern sauber überlebt.'}; return ng;}
- const nextBeam=game.kind==='intermission'?Math.max(0,game.nextBeam-game.time):0, beamAnn=game.kind==='intermission'&&nextBeam<=BEAM_WARNING&&game.time<INTERMISSION_SECONDS+1, crystalAge=game.kind==='intermission'&&game.crystal?game.time-game.crystal.droppedAt:0, success=game.failed&&game.failed.startsWith('Clear'), pStar=game.kind==='intermission'?game.stars.find(s=>s.target===playerName):null, cState=game.kind==='p3'?constellationState(game.currentWave,game.time):'none';
- return <main className="app"><section className="layout"><div className="panel arenaPanel"><div className="arena" style={{width:ARENA,height:ARENA}}><div className="arenaBg"><div className="ringOuter"/><div className="ringInner"/></div><div className="boss">L'ura</div>{game.kind==='intermission'&&<>{game.beams.map(b=><div key={b.id} className={game.time>b.warnUntil?'beam active':'beam warning'} style={{width:RADIUS+20,height:BEAM_WIDTH,marginTop:-BEAM_WIDTH/2,transform:`rotate(${b.angle}rad)`}}/>)}{teammates.map(t=>{const st=game.stars.find(s=>s.target===t.name);return <React.Fragment key={t.name}>{st&&<Star x={t.x} y={t.y} star={st} now={game.time}/>}<RaidPlayer t={t}/></React.Fragment>})}{pStar&&<Star x={game.player.x} y={game.player.y} star={pStar} now={game.time} player/>}{game.crystal&&<div className={game.crystal.pickupArmed?'crystal pickupReady':'crystal'} style={{left:game.crystal.x,top:game.crystal.y,width:CRYSTAL_R*2,height:CRYSTAL_R*2}}/>}</>}{game.kind==='p3'&&<>{game.lightCarriers.map(l=><div key={l.id} className="lightCircle" style={{left:l.x,top:l.y,width:LIGHT_R*2,height:LIGHT_R*2}}><span>{l.name}</span></div>)}{game.soaks.map(s=><div key={s.id} className={s.progress>=SOAK_REQUIRED?'soak done':s.assigned==='player'?'soak playerSoak':'soak'} style={{left:s.x,top:s.y,width:SOAK_R*2,height:SOAK_R*2}}><div className="soakLabel">{s.progress>=SOAK_REQUIRED?'done':`${Math.ceil(SOAK_REQUIRED-s.progress)}s`}</div><div className="soakFill" style={{height:`${(s.progress/SOAK_REQUIRED)*100}%`}}/></div>)}{game.currentWave&&<Constellation wave={game.currentWave} state={cState}/>}<P3Hud game={game} state={cState}/>{game.time>=game.soaksStartedAt&&game.soaks.some(s=>s.progress<SOAK_REQUIRED)&&<SoakBar game={game}/>} {!game.lightCarriers.some(l=>dist(game.player,l)<=LIGHT_R)&&<div className="lightWarning">OUTSIDE LIGHT ({Math.max(0,OUTSIDE_LIGHT_GRACE-game.outsideLightTime).toFixed(1)})</div>}</>}<div className="player" style={{left:game.player.x,top:game.player.y}}><div className={game.kind==='intermission'&&game.hasCrystal?'playerIcon hasCrystal':'playerIcon'}>{game.kind==='intermission'&&game.hasCrystal&&<div className="innerCrystal"/>}</div><div className="playerName">{playerName}</div></div>{beamAnn&&game.running&&<div className="raidWarning">Beams ({nextBeam.toFixed(1)})</div>}{!game.running&&game.failed&&<div className="wipeOverlay"><div className={success?'resultBox success':'resultBox fail'}><h2>{success?'Clear':'Wipe'}</h2><p>{game.failed}</p><button onClick={()=>restart()}>Retry</button></div></div>}</div></div><aside className="panel sidebar"><h1>L'ura Trainer</h1><p>WASD bewegen. Intermission trainiert Crystal Drop. P3 trainiert Light-Zonen, Soaks und Dark Constellations.</p><div className="settingsBox"><label>Mode<select value={mode} onChange={e=>handleModeChange(e.target.value)}><option value="intermission">Intermission Crystal</option><option value="p3">P3 Dark Constellations</option></select></label>{mode==='p3'&&<label>P3 Light Phase<select value={p3Phase} onChange={e=>handlePhaseChange(e.target.value)}><option value="1">Phase 1: 3 Light Circles</option><option value="2">Phase 2: 2 Light Circles</option><option value="3">Phase 3: 1 moving Light Circle</option></select></label>}<label>Player<select value={playerName} onChange={e=>handlePlayerChange(e.target.value)}>{raid.map(([name])=><option key={name} value={name}>{name}</option>)}</select></label><div className="keybindRow"><div><span>Action-Button</span><b>{comboLabel(actionCombo)}</b></div><button className="smallButton" onClick={()=>setRecording(true)}>Ändern</button></div></div>{game.kind==='intermission'?<IntermissionStats game={game} nextBeam={nextBeam} crystalAge={crystalAge}/>:<P3Stats game={game}/>}<button className="restart" onClick={()=>restart()}>Restart Run</button></aside></section>{setupOpen&&<div className="modalOverlay"><div className="modal"><h2>Setup</h2><p>Wähle Modus, Player und Crystal-Drop-Button.</p><label>Mode<select value={mode} onChange={e=>setMode(e.target.value)}><option value="intermission">Intermission Crystal</option><option value="p3">P3 Dark Constellations</option></select></label>{mode==='p3'&&<label>P3 Light Phase<select value={p3Phase} onChange={e=>setP3Phase(Number(e.target.value))}><option value="1">Phase 1: 3 Light Circles</option><option value="2">Phase 2: 2 Light Circles</option><option value="3">Phase 3: 1 moving Light Circle</option></select></label>}<label>Player<select value={playerName} onChange={e=>setPlayerName(e.target.value)}>{raid.map(([name])=><option key={name} value={name}>{name}</option>)}</select></label><div className="recordBox"><span>Action-Button</span><b>{comboLabel(actionCombo)}</b><button onClick={()=>setRecording(true)}>Taste aufnehmen</button></div><button className="restart" onClick={()=>applySettings({mode,playerName,p3Phase,actionCombo})}>Start</button></div></div>}{recording&&<div className="modalOverlay topLayer"><div className="modal keyModal"><h2>Taste drücken</h2><p>Drücke deine gewünschte Taste oder Kombination.</p><button onClick={()=>setRecording(false)}>Abbrechen</button></div></div>}</main>;
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
 }
-function IntermissionStats({game,nextBeam,crystalAge}){return <><div className="stats"><Stat label="Timer" value={`${game.time.toFixed(1)}s / ${INTERMISSION_SECONDS}s`}/><Stat label="Crystal" value={game.hasCrystal?'getragen':`boden ${Math.max(0,5-crystalAge).toFixed(1)}s`} danger={!game.hasCrystal&&5-crystalAge<1.5}/><Stat label="Nächste Beams" value={`${nextBeam.toFixed(1)}s`} danger={nextBeam<=3}/><Stat label="Drops" value={game.drops}/></div><div className="infoBox"><strong>Fail Conditions</strong><p>Crystal liegt länger als 5 Sekunden.</p><p>Crystal wird vom aktiven Beam getroffen.</p><p>Starsplinter zählt erst bei der Explosion.</p></div></>}
-function P3Stats({game}){const rem=game.time>=game.soaksStartedAt?Math.max(0,SOAK_TIMER-(game.time-game.soaksStartedAt)):SOAK_TIMER, soaked=game.soaks.filter(s=>s.progress>=SOAK_REQUIRED).length; return <><div className="stats"><Stat label="Timer" value={`${game.time.toFixed(1)}s`}/><Stat label="Soaks" value={`${soaked}/3`} danger={rem<5&&soaked<3}/><Stat label="Soak Time" value={`${rem.toFixed(1)}s`} danger={rem<5&&soaked<3}/><Stat label="Constellations" value={`${game.waveId}/5`}/></div><div className="infoBox"><strong>P3 Training</strong><p>Bleib in einer Light-Zone.</p><p>Soaks brauchen 5 Sekunden Kontakt.</p><p>Dark Constellation: Punkte erscheinen, nach 2 Sekunden verbinden sie sich, nach 2 Sekunden despawnen sie.</p></div><div className="infoBox"><strong>Hinweis</strong><p>Die Constellations sind nearest-neighbor simuliert, nicht garantiert encounter-pixelgenau.</p></div></>}
-function Stat({label,value,danger}){return <div className={danger?'stat danger':'stat'}><span>{label}</span><b>{value}</b></div>}
-function RaidPlayer({t}){return <div className="teammate" style={{left:t.x,top:t.y}}><div className="teammateIcon"/><div className="name">{t.name}</div></div>}
-function Star({x,y,star,now,player}){const size=320,c=size/2,active=now>=star.activeAt,lines=[]; for(let i=0;i<star.rays;i++){const a=star.rotation+(i/star.rays)*Math.PI*2;lines.push({x1:c+Math.cos(a)*18,y1:c+Math.sin(a)*18,x2:c+Math.cos(a)*145,y2:c+Math.sin(a)*145});} return <svg className={['star',player?'playerStar':'',active?'starActive':'starWarning'].join(' ')} width={size} height={size} style={{left:x-c,top:y-c}}>{lines.map((s,i)=><line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={active?'rgb(248 113 113)':'rgb(56 189 248)'} strokeWidth={active?'14':'8'} strokeLinecap="round" opacity={active?'.98':'.55'}/>)}<circle cx={c} cy={c} r="8" fill="rgb(15 23 42)" stroke="white" strokeWidth="2"/></svg>}
-function Constellation({wave,state}){const active=state==='active'; return <svg className="constellation" width={ARENA} height={ARENA}>{active&&wave.edges.map((e,i)=>{const a=wave.points[e.a],b=wave.points[e.b]; return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgb(125 211 252)" strokeWidth="18" strokeLinecap="round" opacity=".86"/>})}{wave.points.map(p=><g key={p.id}><circle cx={p.x} cy={p.y} r={active?CONSTELLATION_POINT_R:13} fill="rgb(2 6 23)" stroke={active?'rgb(125 211 252)':'rgb(59 130 246)'} strokeWidth={active?4:3}/>{!active&&<circle cx={p.x} cy={p.y} r="26" fill="rgb(59 130 246)" opacity=".18"/>}</g>)}</svg>}
-function P3Hud({game,state}){let text=''; if(game.currentWave){const age=game.time-game.currentWave.startedAt; text=state==='spawn'?`Dark Constellation ${game.currentWave.id}/5: ${(CONSTELLATION_SPAWN-age).toFixed(1)}`:state==='active'?`DODGE ${game.currentWave.id}/5`:'Reset';} else text=game.waveId<CONSTELLATION_WAVES?`Next Constellation: ${Math.max(0,game.nextWaveAt-game.time).toFixed(1)}`:'Last pattern done'; return <div className="p3Hud">{text}</div>}
-function SoakBar({game}){const rem=clamp((SOAK_TIMER-(game.time-game.soaksStartedAt))/SOAK_TIMER,0,1); return <div className="soakBar"><span>Soaks</span><b>{Math.max(0,SOAK_TIMER-(game.time-game.soaksStartedAt)).toFixed(1)}</b><div style={{width:`${rem*100}%`}}/></div>}
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function inArena(p, pad = 0) {
+  return Math.hypot(p.x - CENTER, p.y - CENTER) <= RADIUS - pad;
+}
+
+function randomBetween(a, b) {
+  return a + Math.random() * (b - a);
+}
+
+function randomInt(a, b) {
+  return Math.floor(randomBetween(a, b + 1));
+}
+
+function pointLineDistance(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const ab2 = abx * abx + aby * aby;
+  const t = clamp((apx * abx + apy * aby) / ab2, 0, 1);
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function edgeKey(a, b) {
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+function makeMstEdges(points) {
+  const used = new Set([0]);
+  const edges = [];
+
+  while (used.size < points.length) {
+    let best = null;
+    let bestD = Infinity;
+
+    for (const a of used) {
+      for (let b = 0; b < points.length; b++) {
+        if (used.has(b)) continue;
+        const d = dist(points[a], points[b]);
+        if (d < bestD) {
+          bestD = d;
+          best = { a, b };
+        }
+      }
+    }
+
+    if (!best) break;
+    edges.push(best);
+    used.add(best.b);
+  }
+
+  return edges;
+}
+
+function makeConstellation(id) {
+  const count = randomInt(17, 19);
+  const points = [];
+  const offset = Math.random() * Math.PI * 2;
+  let attempts = 0;
+
+  while (points.length < count && attempts < 1000) {
+    attempts++;
+    const angle = offset + (points.length / count) * Math.PI * 2 + randomBetween(-0.32, 0.32);
+    const radius = randomBetween(115, 318);
+    const p = {
+      id: `${id}-${points.length}`,
+      x: CENTER + Math.cos(angle) * radius + randomBetween(-22, 22),
+      y: CENTER + Math.sin(angle) * radius + randomBetween(-22, 22)
+    };
+
+    if (!inArena(p, 34)) continue;
+    if (points.some((other) => dist(p, other) < 58)) continue;
+    points.push(p);
+  }
+
+  while (points.length < count) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = randomBetween(120, 310);
+    points.push({
+      id: `${id}-${points.length}`,
+      x: CENTER + Math.cos(angle) * radius,
+      y: CENTER + Math.sin(angle) * radius
+    });
+  }
+
+  const edges = makeMstEdges(points);
+  const seen = new Set(edges.map((e) => edgeKey(e.a, e.b)));
+
+  points.forEach((p, i) => {
+    const nearest = points
+      .map((q, j) => ({ j, d: i === j ? Infinity : dist(p, q) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+
+    nearest.forEach(({ j, d }) => {
+      const key = edgeKey(i, j);
+      if (!seen.has(key) && d < 215) {
+        seen.add(key);
+        edges.push({ a: i, b: j });
+      }
+    });
+  });
+
+  return { id, points, edges, startedAt: 0 };
+}
+
+function dcState(wave, now) {
+  if (!wave) return 'none';
+  const age = now - wave.startedAt;
+  if (age < DC_SPAWN) return 'spawn';
+  if (age < DC_SPAWN + DC_ACTIVE) return 'active';
+  return 'done';
+}
+
+function lightSetup(phase) {
+  if (phase === 1) {
+    return [
+      { id: 1, name: 'Wuff', x: CENTER - 135, y: CENTER + 70 },
+      { id: 2, name: 'Wuff2', x: CENTER + 120, y: CENTER + 70 },
+      { id: 3, name: 'Wuff3', x: CENTER, y: CENTER + 185 }
+    ];
+  }
+
+  if (phase === 2) {
+    return [
+      { id: 1, name: 'Wuff', x: CENTER - 72, y: CENTER + 120 },
+      { id: 2, name: 'Wuff2', x: CENTER + 72, y: CENTER + 120 }
+    ];
+  }
+
+  return [
+    { id: 1, name: 'Wuff', x: CENTER - 85, y: CENTER + 90 }
+  ];
+}
+
+function soaks() {
+  return [
+    { id: 1, x: CENTER - 160, y: CENTER + 95, progress: 0 },
+    { id: 2, x: CENTER + 160, y: CENTER + 95, progress: 0 },
+    { id: 3, x: CENTER, y: CENTER + 215, progress: 0 }
+  ];
+}
+
+function initialP3(phase = 1) {
+  const lights = lightSetup(phase);
+  return {
+    mode: 'p3',
+    phase,
+    running: true,
+    failed: null,
+    time: 0,
+    player: { x: lights[0].x - 25, y: lights[0].y },
+    lights,
+    soaks: soaks(),
+    soaksStartedAt: 1.2,
+    outsideLightTime: 0,
+    currentWave: null,
+    waveId: 0,
+    nextWaveAt: 3
+  };
+}
+
+function initialIntermission() {
+  return {
+    mode: 'intermission',
+    running: true,
+    failed: null,
+    time: 0,
+    player: { ...STARTS.intermission },
+    hasCrystal: true,
+    crystal: null,
+    beams: [],
+    nextBeam: BEAM_INTERVAL,
+    beamId: 1,
+    drops: 0
+  };
+}
+
+function makeBeam(now, id) {
+  return {
+    id,
+    angle: Math.random() * Math.PI * 2,
+    warnUntil: now + BEAM_WARNING,
+    activeUntil: now + BEAM_WARNING + BEAM_ACTIVE
+  };
+}
+
+function beamHitsCircle(beam, p, radius) {
+  const len = RADIUS + 20;
+  const bx = CENTER + Math.cos(beam.angle) * len;
+  const by = CENTER + Math.sin(beam.angle) * len;
+  return pointLineDistance(p.x, p.y, CENTER, CENTER, bx, by) <= BEAM_WIDTH / 2 + radius;
+}
+
+export default function App() {
+  const [selectedMode, setSelectedMode] = useState('p3');
+  const [phase, setPhase] = useState(1);
+  const [game, setGame] = useState(() => initialP3(1));
+  const keys = useRef({});
+  const last = useRef(performance.now());
+
+  function restart(nextMode = selectedMode, nextPhase = phase) {
+    last.current = performance.now();
+    setGame(nextMode === 'p3' ? initialP3(Number(nextPhase)) : initialIntermission());
+  }
+
+  function changeMode(value) {
+    setSelectedMode(value);
+    restart(value, phase);
+  }
+
+  function changePhase(value) {
+    const nextPhase = Number(value);
+    setPhase(nextPhase);
+    restart('p3', nextPhase);
+  }
+
+  useEffect(() => {
+    const down = (e) => {
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+      keys.current[e.code] = true;
+    };
+
+    const up = (e) => {
+      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+      keys.current[e.code] = false;
+    };
+
+    window.addEventListener('keydown', down, { passive: false });
+    window.addEventListener('keyup', up, { passive: false });
+
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, []);
+
+  function movePlayer(g, dt) {
+    let vx = 0;
+    let vy = 0;
+
+    if (keys.current.KeyW) vy -= 1;
+    if (keys.current.KeyS) vy += 1;
+    if (keys.current.KeyA) vx -= 1;
+    if (keys.current.KeyD) vx += 1;
+
+    if (!vx && !vy) return g.player;
+
+    const l = Math.hypot(vx, vy);
+    vx /= l;
+    vy /= l;
+
+    const p = {
+      x: g.player.x + vx * PLAYER_SPEED * dt,
+      y: g.player.y + vy * PLAYER_SPEED * dt
+    };
+
+    return inArena(p, PLAYER_R) ? p : g.player;
+  }
+
+  function movePhase3Light(lights, soaks, now) {
+    if (lights.length !== 1) return lights;
+
+    const route = [
+      { x: CENTER - 85, y: CENTER + 90 },
+      { x: soaks[0].x, y: soaks[0].y },
+      { x: soaks[1].x, y: soaks[1].y },
+      { x: soaks[2].x, y: soaks[2].y }
+    ];
+
+    let t = now - 1.3;
+    const travel = 1.0;
+    const hold = 5.1;
+    let pos = route[0];
+
+    for (let i = 1; i < route.length; i++) {
+      if (t <= 0) break;
+
+      if (t < travel) {
+        const f = t / travel;
+        pos = {
+          x: route[i - 1].x + (route[i].x - route[i - 1].x) * f,
+          y: route[i - 1].y + (route[i].y - route[i - 1].y) * f
+        };
+        break;
+      }
+
+      t -= travel;
+
+      if (t < hold) {
+        pos = route[i];
+        break;
+      }
+
+      t -= hold;
+      pos = route[i];
+    }
+
+    return [{ ...lights[0], x: pos.x, y: pos.y }];
+  }
+
+  function tickP3(g, dt) {
+    let ng = { ...g, time: g.time + dt };
+    const now = ng.time;
+
+    ng.player = movePlayer(ng, dt);
+    ng.lights = ng.phase === 3 ? movePhase3Light(ng.lights, ng.soaks, now) : ng.lights;
+
+    let nextSoaks = ng.soaks.map((s) => ({ ...s }));
+
+    if (now >= ng.soaksStartedAt) {
+      nextSoaks = nextSoaks.map((s) => {
+        let progress = s.progress;
+
+        if (dist(ng.player, s) <= SOAK_R) progress += dt;
+
+        if (ng.phase === 3) {
+          if (ng.lights.some((l) => dist(l, s) <= SOAK_R + 4)) progress += dt;
+        } else {
+          if (s.id !== 3 && now > 2.0 + s.id * 0.6) progress += dt;
+        }
+
+        return { ...s, progress: Math.min(SOAK_REQUIRED, progress) };
+      });
+    }
+
+    ng.soaks = nextSoaks;
+
+    if (
+      now >= ng.soaksStartedAt &&
+      now - ng.soaksStartedAt >= SOAK_TIMER &&
+      nextSoaks.some((s) => s.progress < SOAK_REQUIRED)
+    ) {
+      return { ...ng, running: false, failed: 'Soaks wurden nicht innerhalb von 20 Sekunden geleert.' };
+    }
+
+    const insideLight = ng.lights.some((l) => dist(ng.player, l) <= LIGHT_R);
+    ng.outsideLightTime = insideLight ? 0 : ng.outsideLightTime + dt;
+
+    if (ng.outsideLightTime > OUTSIDE_LIGHT_GRACE) {
+      return { ...ng, running: false, failed: 'Du warst zu lange außerhalb einer Light-Zone.' };
+    }
+
+    if (!ng.currentWave && ng.waveId < DC_WAVES && now >= ng.nextWaveAt) {
+      const waveId = ng.waveId + 1;
+      ng.currentWave = { ...makeConstellation(waveId), startedAt: now };
+      ng.waveId = waveId;
+    }
+
+    if (ng.currentWave) {
+      const state = dcState(ng.currentWave, now);
+
+      if (state === 'active') {
+        for (const edge of ng.currentWave.edges) {
+          const a = ng.currentWave.points[edge.a];
+          const b = ng.currentWave.points[edge.b];
+          if (pointLineDistance(ng.player.x, ng.player.y, a.x, a.y, b.x, b.y) <= DC_LINE_WIDTH / 2 + PLAYER_R) {
+            return { ...ng, running: false, failed: `Dark Constellation ${ng.currentWave.id}: Verbindung berührt.` };
+          }
+        }
+
+        for (const p of ng.currentWave.points) {
+          if (dist(ng.player, p) <= DC_POINT_R + PLAYER_R) {
+            return { ...ng, running: false, failed: `Dark Constellation ${ng.currentWave.id}: Punkt berührt.` };
+          }
+        }
+      }
+
+      if (state === 'done') {
+        ng.currentWave = null;
+        ng.nextWaveAt = now + DC_GAP;
+      }
+    }
+
+    const allSoaked = ng.soaks.every((s) => s.progress >= SOAK_REQUIRED);
+    if (ng.waveId >= DC_WAVES && !ng.currentWave && allSoaked && now > ng.nextWaveAt - 0.5) {
+      return { ...ng, running: false, failed: 'Clear. P3 Pattern sauber überlebt.' };
+    }
+
+    return ng;
+  }
+
+  function tickIntermission(g, dt) {
+    let ng = { ...g, time: g.time + dt };
+    const now = ng.time;
+
+    ng.player = movePlayer(ng, dt);
+
+    const dropPressed = keys.current.KeyQ && (keys.current.ShiftLeft || keys.current.ShiftRight);
+
+    if (dropPressed && ng.hasCrystal) {
+      ng.hasCrystal = false;
+      ng.crystal = { x: ng.player.x, y: ng.player.y, droppedAt: now, pickupArmed: false };
+      ng.drops += 1;
+    }
+
+    if (!ng.hasCrystal && ng.crystal) {
+      const d = dist(ng.player, ng.crystal);
+
+      if (!ng.crystal.pickupArmed && d >= PLAYER_R + CRYSTAL_R + 18) {
+        ng.crystal = { ...ng.crystal, pickupArmed: true };
+      }
+
+      if (ng.crystal.pickupArmed && d <= PLAYER_R + CRYSTAL_R + 5) {
+        ng.hasCrystal = true;
+        ng.crystal = null;
+      }
+    }
+
+    if (!ng.hasCrystal && ng.crystal && now - ng.crystal.droppedAt > 5) {
+      return { ...ng, running: false, failed: 'Crystal lag länger als 5 Sekunden auf dem Boden.' };
+    }
+
+    if (now >= ng.nextBeam) {
+      const beams = Array.from({ length: 4 }, (_, i) => makeBeam(now, ng.beamId + i));
+      ng.beams = [...ng.beams, ...beams];
+      ng.beamId += 4;
+      ng.nextBeam += BEAM_INTERVAL;
+    }
+
+    ng.beams = ng.beams.filter((b) => now <= b.activeUntil);
+
+    const crystalPos = ng.hasCrystal ? ng.player : ng.crystal;
+    if (crystalPos) {
+      for (const b of ng.beams) {
+        if (now > b.warnUntil && beamHitsCircle(b, crystalPos, CRYSTAL_R)) {
+          return { ...ng, running: false, failed: 'Crystal wurde von einem Beam getroffen.' };
+        }
+      }
+    }
+
+    if (now > INTERMISSION_SECONDS) {
+      return { ...ng, running: false, failed: 'Clear. Intermission überlebt.' };
+    }
+
+    return ng;
+  }
+
+  useEffect(() => {
+    let raf;
+
+    const loop = (nowMs) => {
+      const dt = Math.min(0.033, (nowMs - last.current) / 1000);
+      last.current = nowMs;
+
+      setGame((g) => {
+        if (!g.running) return g;
+        return g.mode === 'p3' ? tickP3(g, dt) : tickIntermission(g, dt);
+      });
+
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const dcCurrentState = game.mode === 'p3' ? dcState(game.currentWave, game.time) : 'none';
+  const success = game.failed?.startsWith('Clear');
+
+  return (
+    <main className="app">
+      <section className="layout">
+        <div className="panel arenaPanel">
+          <div className="arena" style={{ width: ARENA, height: ARENA }}>
+            <div className="arenaBg">
+              <div className="ringOuter" />
+              <div className="ringInner" />
+            </div>
+
+            <div className="boss">L'ura</div>
+
+            {game.mode === 'p3' && (
+              <>
+                {game.lights.map((l) => (
+                  <div key={l.id} className="lightCircle" style={{ left: l.x, top: l.y, width: LIGHT_R * 2, height: LIGHT_R * 2 }}>
+                    <span>{l.name}</span>
+                  </div>
+                ))}
+
+                {game.soaks.map((s) => (
+                  <div
+                    key={s.id}
+                    className={s.progress >= SOAK_REQUIRED ? 'soak done' : s.id === 3 ? 'soak playerSoak' : 'soak'}
+                    style={{ left: s.x, top: s.y, width: SOAK_R * 2, height: SOAK_R * 2 }}
+                  >
+                    <div className="soakLabel">{s.progress >= SOAK_REQUIRED ? 'done' : `${Math.ceil(SOAK_REQUIRED - s.progress)}s`}</div>
+                    <div className="soakFill" style={{ height: `${(s.progress / SOAK_REQUIRED) * 100}%` }} />
+                  </div>
+                ))}
+
+                {game.currentWave && <Constellation wave={game.currentWave} state={dcCurrentState} />}
+
+                <div className="p3Hud">
+                  {game.currentWave
+                    ? dcCurrentState === 'spawn'
+                      ? `Dark Constellation ${game.currentWave.id}/5: ${(DC_SPAWN - (game.time - game.currentWave.startedAt)).toFixed(1)}`
+                      : dcCurrentState === 'active'
+                        ? `DODGE ${game.currentWave.id}/5`
+                        : 'Reset'
+                    : game.waveId < DC_WAVES
+                      ? `Next Constellation: ${Math.max(0, game.nextWaveAt - game.time).toFixed(1)}`
+                      : 'Last pattern done'}
+                </div>
+
+                {game.time >= game.soaksStartedAt && game.soaks.some((s) => s.progress < SOAK_REQUIRED) && (
+                  <div className="soakBar">
+                    <span>Soaks</span>
+                    <b>{Math.max(0, SOAK_TIMER - (game.time - game.soaksStartedAt)).toFixed(1)}</b>
+                    <div style={{ width: `${clamp((SOAK_TIMER - (game.time - game.soaksStartedAt)) / SOAK_TIMER, 0, 1) * 100}%` }} />
+                  </div>
+                )}
+
+                {!game.lights.some((l) => dist(game.player, l) <= LIGHT_R) && (
+                  <div className="lightWarning">
+                    OUTSIDE LIGHT ({Math.max(0, OUTSIDE_LIGHT_GRACE - game.outsideLightTime).toFixed(1)})
+                  </div>
+                )}
+              </>
+            )}
+
+            {game.mode === 'intermission' && (
+              <>
+                {game.beams.map((b) => {
+                  const active = game.time > b.warnUntil;
+                  return (
+                    <div
+                      key={b.id}
+                      className={active ? 'beam active' : 'beam warning'}
+                      style={{
+                        width: RADIUS + 20,
+                        height: BEAM_WIDTH,
+                        marginTop: -BEAM_WIDTH / 2,
+                        transform: `rotate(${b.angle}rad)`
+                      }}
+                    />
+                  );
+                })}
+
+                {game.crystal && (
+                  <div
+                    className={game.crystal.pickupArmed ? 'crystal pickupReady' : 'crystal'}
+                    style={{ left: game.crystal.x, top: game.crystal.y, width: CRYSTAL_R * 2, height: CRYSTAL_R * 2 }}
+                  />
+                )}
+
+                {game.nextBeam - game.time <= BEAM_WARNING && (
+                  <div className="raidWarning">Beams ({Math.max(0, game.nextBeam - game.time).toFixed(1)})</div>
+                )}
+              </>
+            )}
+
+            <div className="player" style={{ left: game.player.x, top: game.player.y }}>
+              <div className={game.mode === 'intermission' && game.hasCrystal ? 'playerIcon hasCrystal' : 'playerIcon'}>
+                {game.mode === 'intermission' && game.hasCrystal && <div className="innerCrystal" />}
+              </div>
+              <div className="playerName">Player</div>
+            </div>
+
+            {!game.running && game.failed && (
+              <div className="wipeOverlay">
+                <div className={success ? 'resultBox success' : 'resultBox fail'}>
+                  <h2>{success ? 'Clear' : 'Wipe'}</h2>
+                  <p>{game.failed}</p>
+                  <button onClick={() => restart()}>Retry</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside className="panel sidebar">
+          <h1>L'ura Trainer</h1>
+          <p>WASD bewegen. Wähle links nur den Trainingsmodus. P3 ist jetzt bewusst separat und ohne Player- oder Keybind-Setup.</p>
+
+          <div className="settingsBox">
+            <label>
+              Training
+              <select value={selectedMode} onChange={(e) => changeMode(e.target.value)}>
+                <option value="p3">Lura P3</option>
+                <option value="intermission">Lura Intermission</option>
+              </select>
+            </label>
+
+            {selectedMode === 'p3' && (
+              <label>
+                P3 Phase
+                <select value={phase} onChange={(e) => changePhase(e.target.value)}>
+                  <option value="1">Phase 1: 3 Light Circles</option>
+                  <option value="2">Phase 2: 2 Light Circles</option>
+                  <option value="3">Phase 3: 1 moving Light Circle</option>
+                </select>
+              </label>
+            )}
+          </div>
+
+          {game.mode === 'p3' ? <P3Stats game={game} /> : <IntermissionStats game={game} />}
+
+          <button className="restart" onClick={() => restart()}>Restart Run</button>
+        </aside>
+      </section>
+    </main>
+  );
+}
+
+function P3Stats({ game }) {
+  const remainingSoak = game.time >= game.soaksStartedAt
+    ? Math.max(0, SOAK_TIMER - (game.time - game.soaksStartedAt))
+    : SOAK_TIMER;
+  const soaked = game.soaks.filter((s) => s.progress >= SOAK_REQUIRED).length;
+
+  return (
+    <>
+      <div className="stats">
+        <Stat label="Timer" value={`${game.time.toFixed(1)}s`} />
+        <Stat label="Soaks" value={`${soaked}/3`} danger={remainingSoak < 5 && soaked < 3} />
+        <Stat label="Soak Time" value={`${remainingSoak.toFixed(1)}s`} danger={remainingSoak < 5 && soaked < 3} />
+        <Stat label="Constellations" value={`${game.waveId}/5`} />
+      </div>
+
+      <div className="infoBox">
+        <strong>P3</strong>
+        <p>Du spawnst als Player in einer Light-Zone.</p>
+        <p>Wuff, Wuff2 und Wuff3 sind die Light-Spieler.</p>
+        <p>Dark Constellations haben jetzt 17 bis 19 Punkte und sind als zusammenhängendes Netzwerk verbunden.</p>
+      </div>
+    </>
+  );
+}
+
+function IntermissionStats({ game }) {
+  const crystalAge = game.crystal ? game.time - game.crystal.droppedAt : 0;
+
+  return (
+    <>
+      <div className="stats">
+        <Stat label="Timer" value={`${game.time.toFixed(1)}s / ${INTERMISSION_SECONDS}s`} />
+        <Stat label="Crystal" value={game.hasCrystal ? 'getragen' : `boden ${Math.max(0, 5 - crystalAge).toFixed(1)}s`} danger={!game.hasCrystal && 5 - crystalAge < 1.5} />
+        <Stat label="Nächste Beams" value={`${Math.max(0, game.nextBeam - game.time).toFixed(1)}s`} />
+        <Stat label="Drops" value={game.drops} />
+      </div>
+
+      <div className="infoBox">
+        <strong>Intermission</strong>
+        <p>Shift + Q legt den Crystal ab. Kurz rauslaufen, danach wieder drüberlaufen zum Aufheben.</p>
+      </div>
+    </>
+  );
+}
+
+function Stat({ label, value, danger }) {
+  return (
+    <div className={danger ? 'stat danger' : 'stat'}>
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
+}
+
+function Constellation({ wave, state }) {
+  const active = state === 'active';
+
+  return (
+    <svg className="constellation" width={ARENA} height={ARENA}>
+      {active && wave.edges.map((edge, index) => {
+        const a = wave.points[edge.a];
+        const b = wave.points[edge.b];
+        return (
+          <line
+            key={index}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke="rgb(125 211 252)"
+            strokeWidth="18"
+            strokeLinecap="round"
+            opacity="0.88"
+          />
+        );
+      })}
+
+      {wave.points.map((p) => (
+        <g key={p.id}>
+          {!active && <circle cx={p.x} cy={p.y} r="28" fill="rgb(59 130 246)" opacity="0.16" />}
+          <circle
+            cx={p.x}
+            cy={p.y}
+            r={active ? DC_POINT_R : 14}
+            fill="rgb(2 6 23)"
+            stroke={active ? 'rgb(125 211 252)' : 'rgb(59 130 246)'}
+            strokeWidth={active ? 4 : 3}
+          />
+        </g>
+      ))}
+    </svg>
+  );
+}

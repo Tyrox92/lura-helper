@@ -96,120 +96,96 @@ function makeMstEdges(points) {
 }
 
 function makePathEdges(points) {
-  if (points.length < 2) return [];
-
-  const MAX_LINK = 155;
-  const HARD_MAX_LINK = 185;
-  const remaining = new Set(points.map((_, i) => i));
-  const edges = [];
-
-  // Start around the left/lower side and then continue locally.
-  // This keeps the pattern as a realistic chain instead of creating huge cross-room jumps.
-  let current = points
-    .map((p, i) => ({
-      i,
-      score: p.x + Math.abs(p.y - (CENTER + 115)) * 0.55
-    }))
-    .sort((a, b) => a.score - b.score)[0].i;
-
-  remaining.delete(current);
-
-  while (remaining.size) {
-    const candidates = [...remaining]
-      .map((j) => {
-        const d = dist(points[current], points[j]);
-        const yPenalty = Math.abs(points[current].y - points[j].y) * 0.10;
-        const reversePenalty = points[j].x < points[current].x - 45 ? 16 : 0;
-        const longPenalty = d > MAX_LINK ? (d - MAX_LINK) * 4 : 0;
-
-        return {
-          j,
-          d,
-          score: d + yPenalty + reversePenalty + longPenalty
-        };
-      })
-      .sort((a, b) => a.score - b.score);
-
-    let pick = candidates.find((c) => c.d <= MAX_LINK);
-
-    // Only allow a longer link if the path would otherwise stop completely.
-    if (!pick) pick = candidates.find((c) => c.d <= HARD_MAX_LINK);
-    if (!pick) break;
-
-    edges.push({ a: current, b: pick.j });
-    remaining.delete(pick.j);
-    current = pick.j;
-  }
-
-  return edges;
+  // Points are generated in path order. Connect only neighbors.
+  // This guarantees no isolated points and no long cross-room skip links.
+  return points.slice(1).map((_, i) => ({ a: i, b: i + 1 }));
 }
 
 function makeConstellation(id) {
   const count = randomInt(17, 19);
   const points = [];
-  const offset = Math.random() * Math.PI * 2;
 
-  // P3 Constellations mostly happen around L'ura and the playable soak/light area.
-  // Keep them out of the unrealistic far upper arena.
-  const zones = [
-    { x: CENTER - 185, y: CENTER + 70, rx: 95, ry: 120, weight: 3 },
-    { x: CENTER - 80, y: CENTER + 105, rx: 110, ry: 115, weight: 3 },
-    { x: CENTER + 25, y: CENTER + 105, rx: 120, ry: 115, weight: 3 },
-    { x: CENTER + 135, y: CENTER + 85, rx: 105, ry: 125, weight: 3 },
-    { x: CENTER + 210, y: CENTER + 50, rx: 80, ry: 110, weight: 2 },
-    { x: CENTER, y: CENTER + 205, rx: 135, ry: 80, weight: 2 }
+  const lanes = [
+    CENTER - 70,
+    CENTER + 25,
+    CENTER + 115,
+    CENTER + 205
   ];
 
-  const weightedZones = zones.flatMap((z) => Array.from({ length: z.weight }, () => z));
+  const startLeft = Math.random() < 0.5;
+  const minX = CENTER - 230;
+  const maxX = CENTER + 235;
+  const minY = CENTER - 65;
+  const maxY = CENTER + 255;
+
+  let current = {
+    x: startLeft ? randomBetween(minX, minX + 70) : randomBetween(maxX - 70, maxX),
+    y: lanes[randomInt(0, lanes.length - 1)] + randomBetween(-18, 18)
+  };
+
+  points.push({ id: `${id}-0`, ...current });
+
+  let dir = startLeft ? 1 : -1;
+  let laneIndex = lanes.reduce((best, lane, i) => {
+    const bestD = Math.abs(lanes[best] - current.y);
+    const d = Math.abs(lane - current.y);
+    return d < bestD ? i : best;
+  }, 0);
 
   let attempts = 0;
 
-  while (points.length < count && attempts < 2500) {
+  while (points.length < count && attempts < 2000) {
     attempts++;
 
-    const zone = weightedZones[Math.floor(Math.random() * weightedZones.length)];
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random());
-
-    const p = {
-      id: `${id}-${points.length}`,
-      x: zone.x + Math.cos(angle) * zone.rx * r + randomBetween(-12, 12),
-      y: zone.y + Math.sin(angle) * zone.ry * r + randomBetween(-12, 12)
-    };
-
-    // Avoid the far upper half. A little above boss is okay, top wall is not.
-    if (p.y < CENTER - 115) continue;
-    if (!inArena(p, 32)) continue;
-    if (dist(p, { x: CENTER, y: CENTER }) < 58) continue;
-    if (points.some((other) => dist(p, other) < 34)) continue;
-
-    points.push(p);
-  }
-
-  while (points.length < count) {
-    const angle = offset + (points.length / count) * Math.PI * 2 + randomBetween(-0.35, 0.35);
-    const radius = randomBetween(90, 260);
-    const p = {
-      id: `${id}-${points.length}`,
-      x: CENTER + Math.cos(angle) * radius,
-      y: CENTER + 80 + Math.sin(angle) * radius * 0.75
-    };
-
-    if (p.y < CENTER - 115) p.y = CENTER - 105 + randomBetween(0, 30);
-    if (!inArena(p, 32)) {
-      const dx = p.x - CENTER;
-      const dy = p.y - CENTER;
-      const len = Math.hypot(dx, dy);
-      p.x = CENTER + (dx / len) * (RADIUS - 42);
-      p.y = CENTER + (dy / len) * (RADIUS - 42);
+    if (Math.random() < 0.28) {
+      laneIndex = clamp(laneIndex + (Math.random() < 0.5 ? -1 : 1), 0, lanes.length - 1);
     }
 
-    points.push(p);
+    if ((current.x > maxX - 45 && dir === 1) || (current.x < minX + 45 && dir === -1)) {
+      dir *= -1;
+      laneIndex = clamp(laneIndex + 1, 0, lanes.length - 1);
+    }
+
+    const stepX = randomBetween(58, 100) * dir;
+    const stepY = (lanes[laneIndex] - current.y) * 0.55 + randomBetween(-36, 36);
+
+    const next = {
+      x: clamp(current.x + stepX, minX, maxX),
+      y: clamp(current.y + stepY, minY, maxY)
+    };
+
+    if (!inArena(next, 34)) continue;
+    if (dist(next, { x: CENTER, y: CENTER }) < 58) continue;
+
+    const previous = points[points.length - 1];
+    const linkLength = dist(previous, next);
+
+    // The boss patterns do not create giant jumps. Keep every segment local.
+    if (linkLength < 45 || linkLength > 135) continue;
+
+    points.push({ id: `${id}-${points.length}`, ...next });
+    current = next;
   }
 
-  // Realistic training approximation:
-  // Dark Constellation mostly behaves like one continuous path through the points.
-  // So each point gets at most two connections. No spiderweb / multi-edge clusters.
+  // Fallback: if the random walk got stuck, continue with a controlled local spiral.
+  while (points.length < count) {
+    const previous = points[points.length - 1];
+    const angle = (points.length / count) * Math.PI * 2 + (startLeft ? 0 : Math.PI);
+    const next = {
+      x: clamp(previous.x + Math.cos(angle) * 75, minX, maxX),
+      y: clamp(previous.y + Math.sin(angle) * 55, minY, maxY)
+    };
+
+    if (!inArena(next, 34) || dist(next, { x: CENTER, y: CENTER }) < 58) {
+      next.x = clamp(previous.x + 70 * dir, minX, maxX);
+      next.y = clamp(previous.y + 25, minY, maxY);
+      if ((next.x >= maxX || next.x <= minX)) dir *= -1;
+    }
+
+    points.push({ id: `${id}-${points.length}`, ...next });
+    current = next;
+  }
+
   const edges = makePathEdges(points);
 
   return { id, points, edges, startedAt: 0 };

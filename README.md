@@ -1,12 +1,14 @@
-# L'ura Trainer v8
+# L'ura Trainer v9
 
-## Änderungen gegenüber v7
+## Änderungen gegenüber v8
 
-- Dark-Consteallation-Pfade vermeiden jetzt unrealistisch lange Verbindungslinien.
-- Der Pfad wählt lokale Nachbarpunkte mit Maximaldistanz.
-- Längere Verbindungen werden nur noch als Notfall erlaubt, damit das Pattern verbunden bleibt.
-- Punktverteilung wurde dichter in den realistischen P3-Bereich gelegt, damit natürlichere Ketten entstehen.
-- Player-Hitbox gegen Constellation-Laser bleibt center-point-nah.
+- Dark Constellations werden jetzt direkt als Pfad generiert, nicht erst als Punktwolke.
+- Keine isolierten Punkte mehr.
+- Keine langen Skip-Linien über mehrere Sterne hinweg.
+- Jede Verbindung geht nur zum nächsten Punkt in der Kette.
+- Segmente haben eine Maximaldistanz, damit keine unrealistischen Querlinien entstehen.
+- 17 bis 19 Punkte bleiben erhalten.
+- Spawn-Bereich bleibt weiterhin hauptsächlich im realistischen P3-Bereich.
 
 ## Lokal starten
 
